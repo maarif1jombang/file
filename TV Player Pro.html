@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TV Online Pro</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <style>
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes pulse-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .animate-pulse-live { animation: pulse-live 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        body { background-color: #000000; }
+
+        .channel-icon-container {
+            width: 42px;
+            height: 42px;
+            min-width: 42px;
+        }
+
+        .header-btn {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        #search-container {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 40px;
+        }
+        #search-container.active {
+            width: 100%;
+        }
+        #app-title-wrapper {
+            transition: opacity 0.2s ease;
+        }
+        #app-title-wrapper.hidden-title {
+            opacity: 0;
+            pointer-events: none;
+            width: 0;
+        }
+    </style>
+</head>
+<body class="text-white font-sans overflow-hidden fixed inset-0 bg-black">
+
+    <!-- OUTER CONTAINER -->
+    <div class="flex flex-col md:flex-row h-full w-full mx-auto relative overflow-hidden bg-gray-950">
+        
+        <!-- PANEL KIRI (Header & Player) -->
+        <div class="flex flex-col w-full md:flex-1 min-w-0 bg-black h-auto md:h-full z-40">
+            
+            <!-- HEADER APP -->
+            <div class="flex items-center px-4 py-3 bg-gray-900 border-b border-gray-800 flex-none z-50 h-16">
+                <div id="app-title-wrapper" class="flex items-center gap-2 flex-shrink-0">
+                    <div class="header-btn bg-blue-500/20 rounded-xl">
+                        <i data-lucide="tv-2" class="w-5 h-5 text-blue-500"></i>
+                    </div>
+                    <h1 class="font-bold text-lg tracking-tight whitespace-nowrap">TV Player <span class="text-blue-500">PRO</span></h1>
+                </div>
+
+                <div class="flex-1 flex justify-end items-center gap-2 overflow-hidden">
+                    <div id="search-container" class="relative flex items-center bg-gray-800 rounded-xl border border-transparent transition-all max-w-sm">
+                        <button id="search-trigger" class="header-btn flex items-center justify-center text-gray-400 hover:text-white">
+                            <i data-lucide="search" class="w-5 h-5"></i>
+                        </button>
+                        <input 
+                            type="text" 
+                            id="search-input"
+                            placeholder="Cari saluran..." 
+                            class="w-0 opacity-0 bg-transparent text-sm text-gray-200 outline-none transition-all placeholder-gray-500"
+                        >
+                        <button id="search-close" class="hidden header-btn items-center justify-center text-gray-500 hover:text-red-400">
+                            <i data-lucide="x" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <button id="import-btn" onclick="document.getElementById('importInput').click()" class="header-btn flex items-center justify-center bg-gray-800 hover:bg-gray-700 rounded-xl transition border border-gray-700 shadow-md group">
+                        <i data-lucide="folder-up" class="w-5 h-5 text-blue-400 group-hover:text-blue-300"></i>
+                    </button>
+                    <input type="file" id="importInput" accept=".m3u,.m3u8,text/plain" class="hidden" onchange="handleFileUpload(event)">
+                </div>
+            </div>
+
+            <!-- AREA PLAYER -->
+            <div class="w-full relative flex-none md:flex-1 aspect-video md:aspect-auto bg-black flex items-center justify-center border-b md:border-b-0 border-gray-800">
+                <video id="video-player" class="w-full h-full absolute inset-0 object-contain" controls playsinline poster="https://via.placeholder.com/1280x720/000000/FFFFFF?text=Menunggu+Siaran"></video>
+                <div id="video-loader" class="absolute inset-0 flex items-center justify-center bg-black/80 z-20 hidden">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
+                </div>
+            </div>
+            
+        </div>
+
+        <!-- PANEL KANAN (Info & List) -->
+        <div class="flex flex-col flex-1 md:flex-none min-h-0 md:min-h-full w-full md:w-[320px] lg:w-[380px] bg-gray-950 md:border-l border-gray-800 relative z-30">
+            
+            <!-- HEADER INFO CHANNEL -->
+            <div class="flex-none flex justify-between items-center p-3 bg-gray-900 border-b border-gray-800 shadow-md z-10 relative h-16">
+                <div class="flex items-center space-x-3 overflow-hidden flex-1">
+                    <div id="current-logo-container" class="bg-gray-800 p-1 rounded-lg w-10 h-10 flex items-center justify-center overflow-hidden flex-shrink-0 border border-gray-700 shadow-inner">
+                        <i data-lucide="monitor" id="current-logo-text" class="w-5 h-5 text-gray-600"></i>
+                        <img id="current-logo-img" src="" class="w-full h-full object-contain hidden" />
+                    </div>
+                    <div class="truncate">
+                        <h3 id="current-title" class="font-bold text-sm truncate text-white">Pilih Channel</h3>
+                        <div id="status-live" class="hidden flex items-center gap-1.5 mt-0.5 leading-none">
+                            <span class="relative flex h-2 w-2">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                            </span>
+                            <span class="text-[10px] font-bold text-red-400 uppercase tracking-tight">LIVE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col items-end justify-center pl-3 border-l border-gray-800 ml-2 flex-shrink-0 min-w-[80px]">
+                    <span id="source-badge" class="text-sm font-bold text-blue-400 truncate max-w-[120px] text-right tracking-tight">
+                        Tanpa sumber
+                    </span>
+                    <p class="text-[10px] font-bold text-gray-500 leading-tight uppercase tracking-tight mt-0.5">
+                        <span id="total-channels" class="text-white">0</span> SALURAN
+                    </p>
+                </div>
+            </div>
+
+            <!-- AREA LIST -->
+            <div id="list-container" class="flex-1 overflow-y-auto scrollbar-hide relative bg-gray-950 p-2">
+                <div id="empty-state" class="flex flex-col items-center justify-center py-16 text-center px-6 h-full">
+                    <div class="w-16 h-16 bg-gray-900 rounded-2xl flex items-center justify-center mb-4 border border-gray-800">
+                        <i data-lucide="plus-circle" class="w-8 h-8 text-gray-700"></i>
+                    </div>
+                    <h2 class="text-base font-bold text-gray-300 mb-1">Belum Ada Playlist</h2>
+                    <p class="text-xs text-gray-500 mb-6">Import file M3U untuk memulai.</p>
+                </div>
+
+                <div id="loading-state" class="hidden flex-col items-center justify-center py-10 space-y-3 h-full">
+                    <div class="animate-spin rounded-full h-8 w-8 border-2 border-gray-700 border-t-blue-500"></div>
+                    <p class="text-xs text-gray-500">Sedang memproses...</p>
+                </div>
+
+                <div id="channel-grid" class="grid grid-cols-2 gap-2 pb-10"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-full shadow-2xl text-xs border border-gray-700 opacity-0 pointer-events-none transition-all z-[100]">
+        Notifikasi
+    </div>
+
+    <script>
+        let allChannels = [];
+        let hls = null;
+        let activeChannelId = null;
+
+        const videoElement = document.getElementById('video-player');
+        const channelGrid = document.getElementById('channel-grid');
+        const searchInput = document.getElementById('search-input');
+        const searchContainer = document.getElementById('search-container');
+        const searchTrigger = document.getElementById('search-trigger');
+        const searchClose = document.getElementById('search-close');
+        const appTitleWrapper = document.getElementById('app-title-wrapper');
+        const importBtn = document.getElementById('import-btn');
+
+        const emptyState = document.getElementById('empty-state');
+        const loadingState = document.getElementById('loading-state');
+        const currentTitle = document.getElementById('current-title');
+        const currentLogoImg = document.getElementById('current-logo-img');
+        const currentLogoText = document.getElementById('current-logo-text');
+        const statusLive = document.getElementById('status-live');
+        const videoLoader = document.getElementById('video-loader');
+        const totalChannelsText = document.getElementById('total-channels');
+        const sourceBadge = document.getElementById('source-badge');
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            
+            searchTrigger.addEventListener('click', () => {
+                if (!searchContainer.classList.contains('active')) {
+                    searchContainer.classList.add('active', 'border-gray-700', 'px-1');
+                    searchInput.classList.replace('w-0', 'w-full');
+                    searchInput.classList.replace('opacity-0', 'opacity-100');
+                    searchInput.focus();
+                    appTitleWrapper.classList.add('hidden-title');
+                    importBtn.classList.add('hidden');
+                    searchClose.classList.remove('hidden');
+                }
+            });
+
+            searchClose.addEventListener('click', () => {
+                searchContainer.classList.remove('active', 'border-gray-700', 'px-1');
+                searchInput.classList.replace('w-full', 'w-0');
+                searchInput.classList.replace('opacity-100', 'opacity-0');
+                searchInput.value = '';
+                appTitleWrapper.classList.remove('hidden-title');
+                importBtn.classList.remove('hidden');
+                searchClose.classList.add('hidden');
+                renderChannels(allChannels);
+            });
+
+            searchInput.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const filtered = allChannels.filter(c => 
+                    (c.name && c.name.toLowerCase().includes(term)) || 
+                    (c.category && c.category.toLowerCase().includes(term))
+                );
+                renderChannels(filtered);
+            });
+        });
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            showLoading(true);
+            reader.onload = (e) => processFileContent(e.target.result, file.name);
+            reader.onerror = () => { showToast("Gagal membaca file"); showLoading(false); };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function processFileContent(content, filename) {
+            try {
+                let parsedData = parseM3U(content);
+                if (parsedData.length === 0) throw new Error("Playlist tidak valid!");
+
+                allChannels = parsedData;
+                sourceBadge.innerText = filename;
+                totalChannelsText.innerText = allChannels.length;
+                renderChannels(allChannels);
+                showToast("Berhasil memuat " + allChannels.length + " saluran");
+                if (allChannels.length > 0) playChannel(allChannels[0]);
+            } catch (err) {
+                showToast(err.message);
+            } finally { showLoading(false); }
+        }
+
+        function parseM3U(m3uContent) {
+            const lines = m3uContent.split('\n');
+            const result = [];
+            let currentItem = null;
+            for (let line of lines) {
+                line = line.trim();
+                if (line.startsWith('#EXTINF:')) {
+                    currentItem = {};
+                    const logoMatch = line.match(/tvg-logo="([^"]*)"/);
+                    if (logoMatch) currentItem.logo = logoMatch[1];
+                    const groupMatch = line.match(/group-title="([^"]*)"/);
+                    currentItem.category = groupMatch ? groupMatch[1] : "Nasional";
+                    const nameParts = line.split(',');
+                    currentItem.name = nameParts.length > 1 ? nameParts.slice(1).join(',').trim() : "Unnamed";
+                } else if (line.startsWith('http') && currentItem) {
+                    currentItem.url = line;
+                    currentItem.id = 'ch-' + result.length;
+                    result.push(currentItem);
+                    currentItem = null;
+                }
+            }
+            return result;
+        }
+
+        function renderChannels(channels) {
+            channelGrid.innerHTML = "";
+            if (channels.length === 0) {
+                emptyState.classList.toggle('hidden', allChannels.length > 0);
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            channels.forEach(channel => {
+                const isActive = activeChannelId === channel.id;
+                const card = document.createElement('div');
+                
+                // Card height increased slightly to accommodate larger text (min-h-[52px])
+                card.className = "flex items-center p-2 rounded-lg cursor-pointer transition-all border relative overflow-hidden min-h-[52px] " + 
+                    (isActive ? "bg-gray-800 border-red-600 shadow-md ring-1 ring-red-500/30" : "bg-gray-900 border-gray-800 hover:bg-gray-800");
+                
+                let logoHtml = "";
+                if (channel.logo) {
+                    logoHtml = "<img src='" + channel.logo + "' class='w-full h-full object-contain p-1' onerror=\"this.outerHTML='<span class=\\'text-gray-600 text-[10px] font-bold\\'> " + channel.name.substring(0,2) + "</span>'\">";
+                } else {
+                    logoHtml = "<span class='text-gray-600 text-[10px] font-bold uppercase'>" + channel.name.substring(0,2) + "</span>";
+                }
+
+                let activeIndicator = isActive ? 
+                    "<div class='absolute right-1 top-1'>" +
+                        "<span class='relative flex h-2 w-2'>" +
+                            "<span class='animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75'></span>" +
+                            "<span class='relative inline-flex rounded-full h-2 w-2 bg-red-500'></span>" +
+                        "</span>" +
+                    "</div>" : "";
+
+                card.innerHTML = 
+                    "<div class='rounded bg-black flex items-center justify-center overflow-hidden border border-gray-800 relative shadow-inner h-9 w-9 min-w-[36px]'>" +
+                        logoHtml +
+                        (isActive ? "<div class='absolute inset-0 bg-red-600/10 backdrop-blur-[0.5px]'></div>" : "") +
+                    "</div>" +
+                    "<div class='ml-3 flex-1 min-w-0 pr-1 flex flex-col justify-center'>" +
+                        "<h4 class='font-bold truncate leading-snug " + (isActive ? "text-red-400" : "text-gray-100") + "' style='font-size: 11px;'>" + channel.name + "</h4>" +
+                        "<p class='text-gray-500 truncate uppercase tracking-tighter font-medium mt-0.5' style='font-size: 9px;'>" + (channel.category || 'TV') + "</p>" +
+                    "</div>" +
+                    activeIndicator;
+
+                card.onclick = () => {
+                    playChannel(channel);
+                    renderChannels(channels);
+                };
+                channelGrid.appendChild(card);
+            });
+        }
+
+        function playChannel(channel) {
+            activeChannelId = channel.id;
+            currentTitle.innerText = channel.name;
+            statusLive.classList.remove('hidden');
+            
+            if (channel.logo) {
+                currentLogoImg.src = channel.logo;
+                currentLogoImg.classList.remove('hidden');
+                currentLogoText.classList.add('hidden');
+            } else {
+                currentLogoImg.classList.add('hidden');
+                currentLogoText.classList.remove('hidden');
+            }
+
+            videoLoader.classList.remove('hidden');
+            if (hls) { hls.destroy(); hls = null; }
+
+            if (Hls.isSupported()) {
+                hls = new Hls();
+                hls.loadSource(channel.url);
+                hls.attachMedia(videoElement);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    videoElement.play().catch(() => {});
+                    videoLoader.classList.add('hidden');
+                });
+                hls.on(Hls.Events.ERROR, () => videoLoader.classList.add('hidden'));
+            } else if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+                videoElement.src = channel.url;
+                videoElement.addEventListener('loadedmetadata', () => {
+                    videoElement.play();
+                    videoLoader.classList.add('hidden');
+                });
+            }
+        }
+
+        function showLoading(show) {
+            loadingState.classList.toggle('hidden', !show);
+            loadingState.classList.toggle('flex', show);
+            channelGrid.classList.toggle('hidden', show);
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.replace('opacity-0', 'opacity-100');
+            setTimeout(() => t.classList.replace('opacity-100', 'opacity-0'), 2500);
+        }
+    </script>
+</body>
+</html>
